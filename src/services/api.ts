@@ -1,6 +1,19 @@
 import axios from 'axios';
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'https://unalone-backend-05eo.onrender.com:5000/api';
+// Résolution robuste de l'URL d'API
+const resolveApiBaseUrl = (): string => {
+  const envUrl = process.env.REACT_APP_API_URL;
+  if (envUrl && envUrl.trim().length > 0) return envUrl;
+  try {
+    const { origin, hostname } = window.location;
+    // Prod: si aucune variable n'est définie, essayer le même domaine avec chemin /api (nécessite un reverse proxy)
+    if (hostname && hostname !== 'localhost') return origin.replace(/\/$/, '') + '/api';
+  } catch {}
+  // Dev fallback
+  return 'https://unalone-backend-05eo.onrender.com:5000/api';
+};
+
+export const API_BASE_URL = resolveApiBaseUrl();
 
 // Configuration axios par défaut
 const apiClient = axios.create({
@@ -401,10 +414,12 @@ export const apiUtils = {
   }
 };
 
-export default {
+const api = {
   events: eventsApi,
   auth: authApi,
   users: usersApi,
   location: locationApi,
   utils: apiUtils
 };
+
+export default api;

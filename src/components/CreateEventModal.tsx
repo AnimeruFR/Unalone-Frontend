@@ -21,9 +21,6 @@ import {
 import {
   Close as CloseIcon,
   LocationOn as LocationIcon,
-  Schedule as ScheduleIcon,
-  Group as GroupIcon,
-  Description as DescriptionIcon,
   Event as EventIcon
 } from '@mui/icons-material';
 import { locationApi, CreateEventData } from '../services/api';

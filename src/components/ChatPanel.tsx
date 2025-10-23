@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Box,
   Paper,
@@ -18,8 +18,7 @@ import {
 } from '@mui/icons-material';
 import axios from 'axios';
 import { socketService } from '../services/socket';
-
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'https://unalone-backend-05eo.onrender.com:5000/api';
+import { API_BASE_URL } from '../services/api';
 
 interface Message {
   _id: string;
@@ -60,6 +59,26 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ eventId, eventTitle, currentUserI
     scrollToBottom();
   }, [messages]);
 
+  const loadMessages = useCallback(async () => {
+    try {
+      setLoading(true);
+      const token = localStorage.getItem('authToken');
+      console.log('Chargement des messages pour l\'événement:', eventId);
+      const response = await axios.get(`${API_BASE_URL}/chat/events/${eventId}/messages`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      console.log('Messages chargés:', response.data);
+      setMessages(response.data || []);
+    } catch (error) {
+      console.error('Erreur chargement messages:', error);
+      if (axios.isAxiosError(error)) {
+        console.error('Détails erreur:', error.response?.data);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [eventId]);
+
   useEffect(() => {
     loadMessages();
 
@@ -99,29 +118,8 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ eventId, eventTitle, currentUserI
       // Quitter la room Socket.IO
       socketService.emit('leave_event', { eventId });
     };
-  }, [eventId]);
-
-  const loadMessages = async () => {
-    try {
-      setLoading(true);
-      const token = localStorage.getItem('authToken');
-      console.log('Chargement des messages pour l\'événement:', eventId);
-      
-      const response = await axios.get(`${API_BASE_URL}/chat/events/${eventId}/messages`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      
-      console.log('Messages chargés:', response.data);
-      setMessages(response.data || []);
-    } catch (error) {
-      console.error('Erreur chargement messages:', error);
-      if (axios.isAxiosError(error)) {
-        console.error('Détails erreur:', error.response?.data);
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
+  }, [eventId, loadMessages]);
+  
 
   const handleSendMessage = async () => {
     if (!newMessage.trim() || sending) return;

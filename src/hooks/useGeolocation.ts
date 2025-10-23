@@ -90,7 +90,7 @@ export const useGeolocation = (options: GeolocationOptions = {}) => {
         navigator.geolocation.clearWatch(watchId);
       }
     };
-  }, []);
+  }, [options]);
 
   const getCurrentPosition = () => {
     setState(prev => ({ ...prev, loading: true }));

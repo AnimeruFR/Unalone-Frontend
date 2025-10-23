@@ -8,8 +8,7 @@ import {
   Box,
   Typography,
   Chip,
-  IconButton,
-  Divider
+  IconButton
 } from '@mui/material';
 import { 
   Close as CloseIcon, 

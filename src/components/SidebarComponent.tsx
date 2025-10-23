@@ -11,17 +11,13 @@ import {
   FormControl,
   InputLabel,
   Chip,
-  Dialog,
   Accordion,
   AccordionSummary,
   AccordionDetails,
   List,
   ListItem,
-  ListItemText,
-  ListItemSecondaryAction,
   IconButton,
   Menu,
-  MenuList,
   MenuItem as MenuItemComponent
 } from '@mui/material';
 import {
@@ -81,8 +77,6 @@ const SidebarComponent: React.FC<SidebarProps> = ({
   onGoToAccount,
   selectedEventId
 }) => {
-  // Sécurité contre les valeurs non-tableau
-  const safeEvents: Event[] = Array.isArray(events) ? events : [];
   const [searchText, setSearchText] = useState('');
   const [filterType, setFilterType] = useState('');
   const [sortBy, setSortBy] = useState('date');
@@ -105,7 +99,8 @@ const SidebarComponent: React.FC<SidebarProps> = ({
 
   // Filtrer et trier les événements
   const filteredAndSortedEvents = useMemo(() => {
-    let filtered = safeEvents.filter(event => {
+    const inputEvents: Event[] = Array.isArray(events) ? events : [];
+    let filtered = inputEvents.filter(event => {
       const matchesSearch = event.title.toLowerCase().includes(searchText.toLowerCase()) ||
                            event.description.toLowerCase().includes(searchText.toLowerCase()) ||
                            event.placeName.toLowerCase().includes(searchText.toLowerCase());
@@ -131,7 +126,7 @@ const SidebarComponent: React.FC<SidebarProps> = ({
     });
 
     return filtered;
-  }, [safeEvents, searchText, filterType, sortBy, userPosition]);
+  }, [events, searchText, filterType, sortBy, userPosition]);
 
   const formatEventDate = (datetime: string): string => {
     const date = new Date(datetime);

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { ThemeProvider, CssBaseline, Box, Snackbar, Alert, Fab, Button } from '@mui/material';
 import MapComponent from './components/MapComponent';
 import SidebarComponent from './components/SidebarComponent';
@@ -15,7 +15,7 @@ import EventDetailsModal from './components/EventDetailsModal';
 
 function App() {
   const [events, setEvents] = useState<Event[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Note: loading UI not used; remove to satisfy lint and simplify state
   const [error, setError] = useState<string>('');
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({
@@ -147,9 +147,20 @@ function App() {
   };
 
   // Charger les événements au démarrage
+  const loadEvents = useCallback(async () => {
+    try {
+      const eventsData = await eventsApi.getAll();
+      setEvents(eventsData);
+    } catch (err) {
+      console.error('Erreur lors du chargement des événements:', err);
+      setError('Impossible de charger les événements');
+      showSnackbar('Erreur lors du chargement des événements', 'error');
+    }
+  }, []);
+
   useEffect(() => {
     void loadEvents();
-  }, []);
+  }, [loadEvents]);
 
   // Injecter les styles CSS personnalisés
   useEffect(() => {
@@ -159,19 +170,7 @@ function App() {
     return () => styleSheet.remove();
   }, []);
 
-  const loadEvents = async () => {
-    try {
-      setLoading(true);
-      const eventsData = await eventsApi.getAll();
-      setEvents(eventsData);
-    } catch (err) {
-      console.error('Erreur lors du chargement des événements:', err);
-      setError('Impossible de charger les événements');
-      showSnackbar('Erreur lors du chargement des événements', 'error');
-    } finally {
-      setLoading(false);
-    }
-  };
+  // loadEvents defined above with useCallback
 
   const handleCreateEvent = async (eventData: CreateEventData) => {
     try {
