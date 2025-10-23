@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">UnAlone</string>
+    <string name="title_activity_main">UnAlone</string>
+    <string name="package_name">com.unalone.mobile</string>
+    <string name="custom_url_scheme">com.unalone.mobile</string>
+</resources>
