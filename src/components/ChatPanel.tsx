@@ -10,11 +10,13 @@ import {
   Avatar,
   Divider,
   CircularProgress,
+  Alert,
 } from '@mui/material';
 import { 
   Send as SendIcon, 
   Close as CloseIcon,
-  Delete as DeleteIcon 
+  Delete as DeleteIcon,
+  VolumeOff as MutedIcon
 } from '@mui/icons-material';
 import axios from 'axios';
 import { socketService } from '../services/socket';
@@ -42,13 +44,15 @@ interface ChatPanelProps {
   currentUserId: string;
   onClose: () => void;
   isEventCreator?: boolean;
+  isMuted?: boolean;
 }
 
-const ChatPanel: React.FC<ChatPanelProps> = ({ eventId, eventTitle, currentUserId, onClose, isEventCreator = false }) => {
+const ChatPanel: React.FC<ChatPanelProps> = ({ eventId, eventTitle, currentUserId, onClose, isEventCreator = false, isMuted = false }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
+  const [mutedError, setMutedError] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -124,6 +128,13 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ eventId, eventTitle, currentUserI
   const handleSendMessage = async () => {
     if (!newMessage.trim() || sending) return;
 
+    // Si l'utilisateur est muté, ne pas envoyer
+    if (isMuted) {
+      setMutedError(true);
+      setTimeout(() => setMutedError(false), 3000);
+      return;
+    }
+
     try {
       setSending(true);
       const token = localStorage.getItem('authToken');
@@ -151,10 +162,15 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ eventId, eventTitle, currentUserI
       }
       
       setNewMessage('');
+      setMutedError(false);
     } catch (error) {
       console.error('Erreur envoi message:', error);
       if (axios.isAxiosError(error)) {
         console.error('Détails erreur:', error.response?.data);
+        // Détecter si l'utilisateur est muté
+        if (error.response?.status === 403 && error.response?.data?.message?.includes('désactivé')) {
+          setMutedError(true);
+        }
       }
     } finally {
       setSending(false);
@@ -421,39 +437,56 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ eventId, eventTitle, currentUserI
       </Box>
 
       {/* Input */}
-      <Box sx={{ p: 2, borderTop: '1px solid #e0e0e0', backgroundColor: 'white' }}>
-        <Box sx={{ display: 'flex', gap: 1 }}>
-          <TextField
-            fullWidth
-            size="small"
-            placeholder="Écrivez un message..."
-            value={newMessage}
-            onChange={(e) => setNewMessage(e.target.value)}
-            onKeyPress={handleKeyPress}
-            disabled={sending}
-            multiline
-            maxRows={3}
-          />
-          <IconButton
-            color="primary"
-            onClick={handleSendMessage}
-            disabled={!newMessage.trim() || sending}
-            sx={{
-              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-              color: 'white',
-              '&:hover': {
-                background: 'linear-gradient(135deg, #5568d3 0%, #6a3f8f 100%)',
-              },
-              '&:disabled': {
-                background: '#e0e0e0',
-                color: '#9e9e9e',
-              },
+      {isMuted || mutedError ? (
+        <Box sx={{ p: 2, borderTop: '1px solid #e0e0e0', backgroundColor: '#fff3e0' }}>
+          <Alert 
+            severity="warning" 
+            icon={<MutedIcon />}
+            sx={{ 
+              '& .MuiAlert-message': { 
+                width: '100%',
+                fontWeight: 500 
+              }
             }}
           >
-            {sending ? <CircularProgress size={20} color="inherit" /> : <SendIcon />}
-          </IconButton>
+            Vous avez été désactivé du chat par l'organisateur. Vous pouvez toujours lire les messages mais pas en envoyer.
+          </Alert>
         </Box>
-      </Box>
+      ) : (
+        <Box sx={{ p: 2, borderTop: '1px solid #e0e0e0', backgroundColor: 'white' }}>
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            <TextField
+              fullWidth
+              size="small"
+              placeholder="Écrivez un message..."
+              value={newMessage}
+              onChange={(e) => setNewMessage(e.target.value)}
+              onKeyPress={handleKeyPress}
+              disabled={sending}
+              multiline
+              maxRows={3}
+            />
+            <IconButton
+              color="primary"
+              onClick={handleSendMessage}
+              disabled={!newMessage.trim() || sending}
+              sx={{
+                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                color: 'white',
+                '&:hover': {
+                  background: 'linear-gradient(135deg, #5568d3 0%, #6a3f8f 100%)',
+                },
+                '&:disabled': {
+                  background: '#e0e0e0',
+                  color: '#9e9e9e',
+                },
+              }}
+            >
+              {sending ? <CircularProgress size={20} color="inherit" /> : <SendIcon />}
+            </IconButton>
+          </Box>
+        </Box>
+      )}
     </Paper>
   );
 };

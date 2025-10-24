@@ -10,7 +10,7 @@ const resolveApiBaseUrl = (): string => {
     if (hostname && hostname !== 'localhost') return origin.replace(/\/$/, '') + '/api';
   } catch {}
   // Dev fallback
-  return 'https://unalone-backend-05eo.onrender.com:5000/api';
+  return process.env.BACKEND_URL + '/api' || 'https://unalone-backend-05eo.onrender.com:5000/api';
 };
 
 export const API_BASE_URL = resolveApiBaseUrl();
@@ -67,7 +67,7 @@ export interface Event {
   lat: number;
   lng: number;
   maxAttendees?: number;
-  attendees: Array<{id: string; name: string}>;
+  attendees: Array<{id: string; name: string; role?: string}>;
   contactLink?: string;
   createdBy: string;
   createdAt: string;
@@ -133,6 +133,7 @@ const transformBackendEventToFrontend = (e: any): Event => {
     ? e.participants.map((p: any) => ({
         id: (p?.user?._id ?? p?.user ?? '').toString(),
         name: (p?.user?.username ?? 'Invité').toString(),
+        role: p?.role ?? 'member', // Inclure le rôle du participant
       }))
     : [];
 
@@ -252,6 +253,20 @@ export const eventsApi = {
   // Quitter un événement
   leave: async (eventId: string): Promise<Event> => {
     const response = await apiClient.post(`/events/${eventId}/leave`);
+    const e = response.data?.data?.event ?? response.data?.event ?? response.data;
+    return transformBackendEventToFrontend(e);
+  },
+
+  // Modifier le rôle d'un participant
+  updateParticipantRole: async (eventId: string, userId: string, role: 'admin' | 'member' | 'muted'): Promise<Event> => {
+    const response = await apiClient.patch(`/events/${eventId}/participants/${userId}/role`, { role });
+    const e = response.data?.data?.event ?? response.data?.event ?? response.data;
+    return transformBackendEventToFrontend(e);
+  },
+
+  // Exclure un participant
+  kickParticipant: async (eventId: string, userId: string): Promise<Event> => {
+    const response = await apiClient.delete(`/events/${eventId}/participants/${userId}`);
     const e = response.data?.data?.event ?? response.data?.event ?? response.data;
     return transformBackendEventToFrontend(e);
   },

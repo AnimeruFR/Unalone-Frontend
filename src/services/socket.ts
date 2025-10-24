@@ -24,7 +24,7 @@ function getSocketUrl(): string {
   }
 
   // 3) Fallback dev
-  return 'https://unalone-backend-05eo.onrender.com:5001';
+  return process.env.SOCKET_URL || 'https://unalone-backend-05eo.onrender.com:5001';
 }
 
 export const socketService = {

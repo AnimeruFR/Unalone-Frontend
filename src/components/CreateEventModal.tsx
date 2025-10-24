@@ -23,13 +23,14 @@ import {
   LocationOn as LocationIcon,
   Event as EventIcon
 } from '@mui/icons-material';
-import { locationApi, CreateEventData } from '../services/api';
+import { locationApi, CreateEventData, Event as EventType } from '../services/api';
 
 interface CreateEventModalProps {
   open: boolean;
   onClose: () => void;
   onCreateEvent: (eventData: CreateEventData) => void;
   userPosition: [number, number] | null;
+  initialEvent?: EventType | null;
 }
 
 interface PlaceOption {
@@ -62,8 +63,11 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({
   open,
   onClose,
   onCreateEvent,
-  userPosition
+  userPosition,
+  initialEvent = null
 }) => {
+  const isEditMode = Boolean(initialEvent);
+
   const [formData, setFormData] = useState<CreateEventData>({
     title: '',
     type: '',
@@ -111,26 +115,53 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({
     return () => clearTimeout(timer);
   }, [placeSearch]);
 
-  // Réinitialiser le formulaire à l'ouverture
+  // Initialiser le formulaire avec les données de l'événement existant ou vide
   useEffect(() => {
     if (open) {
-      setFormData({
-        title: '',
-        type: '',
-        audience: '',
-        datetime: '',
-        description: '',
-        placeName: '',
-        lat: 0,
-        lng: 0,
-        maxAttendees: undefined,
-        contactLink: ''
-      });
-      setPlaceSearch('');
+      if (initialEvent) {
+        // Mode édition: pré-remplir avec les données existantes
+        const eventDate = new Date(initialEvent.datetime);
+        const formattedDate = eventDate.toISOString().slice(0, 16);
+        
+        setFormData({
+          title: initialEvent.title || '',
+          type: initialEvent.type || '',
+          audience: initialEvent.audience || '',
+          datetime: formattedDate,
+          description: initialEvent.description || '',
+          placeName: initialEvent.placeName || '',
+          lat: initialEvent.lat || 0,
+          lng: initialEvent.lng || 0,
+          maxAttendees: initialEvent.maxAttendees,
+          contactLink: initialEvent.contactLink || ''
+        });
+        setPlaceSearch(initialEvent.placeName || '');
+        setSelectedPlace({
+          label: initialEvent.placeName || '',
+          lat: initialEvent.lat || 0,
+          lng: initialEvent.lng || 0,
+          place_id: ''
+        });
+      } else {
+        // Mode création: réinitialiser le formulaire
+        setFormData({
+          title: '',
+          type: '',
+          audience: '',
+          datetime: '',
+          description: '',
+          placeName: '',
+          lat: 0,
+          lng: 0,
+          maxAttendees: undefined,
+          contactLink: ''
+        });
+        setPlaceSearch('');
+      }
       setSelectedPlace(null);
       setError('');
     }
-  }, [open]);
+  }, [open, initialEvent]);
 
   const handleInputChange = (field: keyof CreateEventData, value: any) => {
     setFormData(prev => ({
@@ -242,7 +273,7 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <EventIcon />
           <Typography variant="h6" component="span">
-            ➕ Créer un événement
+            {isEditMode ? '✏️ Modifier l\'événement' : '➕ Créer un événement'}
           </Typography>
         </Box>
         <IconButton onClick={onClose} sx={{ color: 'white' }}>
@@ -430,7 +461,7 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({
             px: 3
           }}
         >
-          ✨ Créer l'événement
+          {isEditMode ? '💾 Enregistrer les modifications' : '✨ Créer l\'événement'}
         </Button>
       </DialogActions>
     </Dialog>

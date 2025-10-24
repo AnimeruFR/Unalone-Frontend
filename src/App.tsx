@@ -99,16 +99,50 @@ function App() {
       setEvents(prev => prev.filter(ev => ev.id !== id));
     };
 
+    const onParticipantRoleUpdated = async (payload: any) => {
+      // Quand un rôle de participant change, recharger l'événement pour avoir les données à jour
+      console.log('🔄 Rôle participant mis à jour:', payload);
+      if (payload?.eventId) {
+        try {
+          const eventsData = await eventsApi.getAll();
+          setEvents(eventsData);
+        } catch (err) {
+          console.error('Erreur rechargement événements après changement rôle:', err);
+        }
+      }
+    };
+
+    const onParticipantKicked = async (payload: any) => {
+      // Quand l'utilisateur actuel est expulsé d'un événement
+      console.log('⚠️ Vous avez été exclu d\'un événement:', payload);
+      if (payload?.eventId === selectedEventId) {
+        // Fermer le chat si l'événement actuel correspond
+        setChatOpen(false);
+        showSnackbar(`Vous avez été exclu de l'événement "${payload?.eventTitle || 'cet événement'}"`, 'error');
+      }
+      // Recharger les événements
+      try {
+        const eventsData = await eventsApi.getAll();
+        setEvents(eventsData);
+      } catch (err) {
+        console.error('Erreur rechargement événements après exclusion:', err);
+      }
+    };
+
     socketService.on('events:created', onCreated);
     socketService.on('events:updated', onUpdated);
     socketService.on('events:deleted', onDeleted);
+    socketService.on('participant:roleUpdated', onParticipantRoleUpdated);
+    socketService.on('participant:kicked', onParticipantKicked);
 
     return () => {
       socketService.off('events:created', onCreated);
       socketService.off('events:updated', onUpdated);
       socketService.off('events:deleted', onDeleted);
+      socketService.off('participant:roleUpdated', onParticipantRoleUpdated);
+      socketService.off('participant:kicked', onParticipantKicked);
     };
-  }, [isAuthenticated]);
+  }, [isAuthenticated, selectedEventId]);
 
   // Transformateur minimal pour événements reçus via sockets
   const normalizeSocketEvent = (e: any): Event => {
@@ -125,6 +159,7 @@ function App() {
       ? e.participants.map((p: any) => ({
           id: (p?.user?._id ?? p?.user ?? '').toString(),
           name: (p?.user?.username ?? 'Invité').toString(),
+          role: p?.role ?? 'member', // Inclure le rôle
         }))
       : [];
     return {
@@ -371,12 +406,18 @@ function App() {
           const userJoined = event.attendees.some(a => a.id === (currentUser as any)?._id || a.id === currentUser?.id);
           if (!userJoined) return null;
           const isCreator = event.createdBy === (currentUser as any)?._id || event.createdBy === currentUser?.id;
+          
+          // Vérifier si l'utilisateur est muté
+          const currentUserAttendee = event.attendees.find(a => a.id === (currentUser as any)?._id || a.id === currentUser?.id);
+          const isMuted = !isCreator && currentUserAttendee?.role === 'muted';
+          
           return (
             <ChatPanel
               eventId={event.id}
               eventTitle={event.title}
               currentUserId={(currentUser as any)?._id || currentUser?.id || ''}
               isEventCreator={isCreator}
+              isMuted={isMuted}
               onClose={() => setChatOpen(false)}
             />
           );

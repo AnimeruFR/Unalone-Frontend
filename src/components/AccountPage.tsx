@@ -24,7 +24,9 @@ import {
   DialogActions,
   Snackbar,
   Menu,
-  MenuItem
+  MenuItem,
+  ListItemAvatar,
+  Tooltip
 } from '@mui/material';
 import {
   Person as PersonIcon,
@@ -36,9 +38,14 @@ import {
   ArrowBack as ArrowBackIcon,
   Group as GroupIcon,
   Share as ShareIcon,
-  Cancel as CancelIcon
+  Cancel as CancelIcon,
+  VolumeOff as MuteIcon,
+  PersonRemove as KickIcon,
+  AdminPanelSettings as AdminIcon,
+  MoreVert as MoreVertIcon
 } from '@mui/icons-material';
 import { Event, User, eventsApi, authApi } from '../services/api';
+import CreateEventModal from './CreateEventModal';
 
 interface AccountPageProps {
   currentUser: User | null;
@@ -87,6 +94,9 @@ const AccountPage: React.FC<AccountPageProps> = ({ currentUser, onBack, onEventS
   });
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
   const [eventAdminOpen, setEventAdminOpen] = useState(false);
+  const [editEventOpen, setEditEventOpen] = useState(false);
+  const [participantMenuAnchor, setParticipantMenuAnchor] = useState<null | HTMLElement>(null);
+  const [selectedParticipant, setSelectedParticipant] = useState<any>(null);
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' | 'info' | 'warning' }>({
     open: false,
     message: '',
@@ -216,17 +226,184 @@ const AccountPage: React.FC<AccountPageProps> = ({ currentUser, onBack, onEventS
   const handleCloseEventAdmin = () => {
     setSelectedEvent(null);
     setEventAdminOpen(false);
+    setParticipantMenuAnchor(null);
+    setSelectedParticipant(null);
+  };
+
+  const handleOpenEditEvent = () => {
+    setEditEventOpen(true);
+    setEventAdminOpen(false);
+  };
+
+  const handleCloseEditEvent = () => {
+    setEditEventOpen(false);
+    // Recharger l'événement pour avoir les dernières données
+    loadUserEvents();
+  };
+
+  const handleUpdateEvent = async (eventData: any) => {
+    if (!selectedEvent) return;
+    
+    try {
+      await eventsApi.update(selectedEvent.id, eventData);
+      setSnackbar({ open: true, message: 'Événement modifié avec succès', severity: 'success' });
+      setEditEventOpen(false);
+      loadUserEvents();
+    } catch (error: any) {
+      console.error('Erreur lors de la modification:', error);
+      const errorMsg = error.response?.data?.message || 'Impossible de modifier l\'événement';
+      setSnackbar({ open: true, message: errorMsg, severity: 'error' });
+    }
+  };
+
+  const handleParticipantMenuOpen = (event: React.MouseEvent<HTMLElement>, participant: any) => {
+    setParticipantMenuAnchor(event.currentTarget);
+    setSelectedParticipant(participant);
+  };
+
+  const handleParticipantMenuClose = () => {
+    setParticipantMenuAnchor(null);
+    setSelectedParticipant(null);
+  };
+
+  const handleKickParticipant = async () => {
+    if (!selectedEvent || !selectedParticipant) return;
+    
+    if (window.confirm(`Êtes-vous sûr de vouloir exclure ${selectedParticipant.name || 'cet utilisateur'} de l'événement ?`)) {
+      // Fermer le menu immédiatement
+      handleParticipantMenuClose();
+      
+      try {
+        await eventsApi.kickParticipant(selectedEvent.id, selectedParticipant.id);
+        setSnackbar({ open: true, message: 'Participant exclu de l\'événement', severity: 'success' });
+        
+        // Recharger les événements et mettre à jour l'événement sélectionné
+        const allEvents = await eventsApi.getAll();
+        const userEvents = allEvents.filter(event => {
+          return event.createdBy === currentUser?.id || event.createdBy === (currentUser as any)?._id;
+        });
+        const userJoinedEvents = allEvents.filter(event => 
+          event.attendees.some(attendee => attendee.id === currentUser?.id || attendee.id === (currentUser as any)?._id)
+        );
+        
+        setCreatedEvents(userEvents);
+        setJoinedEvents(userJoinedEvents);
+        
+        // Mettre à jour l'événement sélectionné dans la modal
+        const updatedEvent = allEvents.find(e => e.id === selectedEvent.id);
+        if (updatedEvent) {
+          setSelectedEvent(updatedEvent);
+        }
+      } catch (error: any) {
+        console.error('Erreur lors de l\'exclusion:', error);
+        const errorMsg = error.response?.data?.message || 'Impossible d\'exclure le participant';
+        setSnackbar({ open: true, message: errorMsg, severity: 'error' });
+      }
+    }
+  };
+
+  const handleMuteParticipant = async () => {
+    if (!selectedEvent || !selectedParticipant) return;
+    
+    const isMuted = selectedParticipant.role === 'muted';
+    const newRole = isMuted ? 'member' : 'muted';
+    
+    // Fermer le menu immédiatement
+    handleParticipantMenuClose();
+    
+    try {
+      await eventsApi.updateParticipantRole(selectedEvent.id, selectedParticipant.id, newRole);
+      setSnackbar({ 
+        open: true, 
+        message: isMuted 
+          ? `${selectedParticipant.name || 'L\'utilisateur'} a été réactivé dans le chat`
+          : `${selectedParticipant.name || 'L\'utilisateur'} a été désactivé du chat`, 
+        severity: 'success' 
+      });
+      
+      // Recharger les événements et mettre à jour l'événement sélectionné
+      const allEvents = await eventsApi.getAll();
+      const userEvents = allEvents.filter(event => {
+        return event.createdBy === currentUser?.id || event.createdBy === (currentUser as any)?._id;
+      });
+      const userJoinedEvents = allEvents.filter(event => 
+        event.attendees.some(attendee => attendee.id === currentUser?.id || attendee.id === (currentUser as any)?._id)
+      );
+      
+      setCreatedEvents(userEvents);
+      setJoinedEvents(userJoinedEvents);
+      
+      // Mettre à jour l'événement sélectionné dans la modal
+      const updatedEvent = allEvents.find(e => e.id === selectedEvent.id);
+      if (updatedEvent) {
+        setSelectedEvent(updatedEvent);
+      }
+    } catch (error: any) {
+      console.error('Erreur lors du mute/unmute:', error);
+      const errorMsg = error.response?.data?.message || 'Impossible de modifier le statut du chat';
+      setSnackbar({ open: true, message: errorMsg, severity: 'error' });
+    }
+  };
+
+  const handlePromoteParticipant = async () => {
+    if (!selectedEvent || !selectedParticipant) return;
+    
+    // Toggle entre admin et member
+    const isAdmin = selectedParticipant.role === 'admin';
+    const newRole = isAdmin ? 'member' : 'admin';
+    
+    // Fermer le menu immédiatement
+    handleParticipantMenuClose();
+    
+    try {
+      await eventsApi.updateParticipantRole(selectedEvent.id, selectedParticipant.id, newRole);
+      setSnackbar({ 
+        open: true, 
+        message: isAdmin
+          ? `${selectedParticipant.name || 'L\'utilisateur'} n'est plus administrateur`
+          : `${selectedParticipant.name || 'L\'utilisateur'} est maintenant administrateur`, 
+        severity: 'success' 
+      });
+      
+      // Recharger les événements et mettre à jour l'événement sélectionné
+      const allEvents = await eventsApi.getAll();
+      const userEvents = allEvents.filter(event => {
+        return event.createdBy === currentUser?.id || event.createdBy === (currentUser as any)?._id;
+      });
+      const userJoinedEvents = allEvents.filter(event => 
+        event.attendees.some(attendee => attendee.id === currentUser?.id || attendee.id === (currentUser as any)?._id)
+      );
+      
+      setCreatedEvents(userEvents);
+      setJoinedEvents(userJoinedEvents);
+      
+      // Mettre à jour l'événement sélectionné dans la modal
+      const updatedEvent = allEvents.find(e => e.id === selectedEvent.id);
+      if (updatedEvent) {
+        setSelectedEvent(updatedEvent);
+      }
+    } catch (error: any) {
+      console.error('Erreur lors de la promotion/rétrogradation:', error);
+      const errorMsg = error.response?.data?.message || 'Impossible de modifier le statut administrateur';
+      setSnackbar({ open: true, message: errorMsg, severity: 'error' });
+    }
   };
 
   const handleCancelEvent = async (eventId: string) => {
-    if (window.confirm('Êtes-vous sûr de vouloir annuler cet événement ? Cette action est irréversible.')) {
+    if (window.confirm('Êtes-vous sûr de vouloir supprimer cet événement ? Cette action est irréversible et l\'événement sera définitivement supprimé.')) {
       try {
-        // TODO: Implémenter l'annulation d'événement dans l'API
-        console.log('Annuler événement:', eventId);
+        await eventsApi.delete(eventId);
+        setSnackbar({ 
+          open: true, 
+          message: 'Événement supprimé avec succès', 
+          severity: 'success' 
+        });
         handleCloseEventAdmin();
         await loadUserEvents(); // Recharger les événements
-      } catch (error) {
-        console.error('Erreur lors de l\'annulation:', error);
+      } catch (error: any) {
+        console.error('Erreur lors de la suppression:', error);
+        const errorMsg = error.response?.data?.message || 'Impossible de supprimer l\'événement';
+        setSnackbar({ open: true, message: errorMsg, severity: 'error' });
       }
     }
   };
@@ -522,9 +699,37 @@ const AccountPage: React.FC<AccountPageProps> = ({ currentUser, onBack, onEventS
                   ) : (
                     <List dense>
                       {selectedEvent.attendees.map((attendee, index) => (
-                        <ListItem key={attendee.id || index}>
+                        <ListItem 
+                          key={attendee.id || index}
+                          secondaryAction={
+                            <IconButton
+                              edge="end"
+                              onClick={(e) => handleParticipantMenuOpen(e, attendee)}
+                            >
+                              <MoreVertIcon />
+                            </IconButton>
+                          }
+                        >
+                          <ListItemAvatar>
+                            <Avatar sx={{ 
+                              bgcolor: attendee.role === 'admin' ? 'primary.main' : 
+                                       attendee.role === 'muted' ? 'warning.main' : 'default' 
+                            }}>
+                              {attendee.role === 'admin' ? <AdminIcon /> : <PersonIcon />}
+                            </Avatar>
+                          </ListItemAvatar>
                           <ListItemText 
-                            primary={attendee.name || 'Utilisateur'}
+                            primary={
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                {attendee.name || 'Utilisateur'}
+                                {attendee.role === 'admin' && (
+                                  <Chip label="Admin" size="small" color="primary" />
+                                )}
+                                {attendee.role === 'muted' && (
+                                  <Chip label="Muet" size="small" color="warning" />
+                                )}
+                              </Box>
+                            }
                             secondary={`Inscrit le ${formatEventDate(selectedEvent.createdAt)}`}
                           />
                         </ListItem>
@@ -543,10 +748,7 @@ const AccountPage: React.FC<AccountPageProps> = ({ currentUser, onBack, onEventS
                     <Button
                       variant="outlined"
                       startIcon={<EditIcon />}
-                      onClick={() => {
-                        // TODO: Ouvrir modal d'édition
-                        console.log('Modifier événement:', selectedEvent.id);
-                      }}
+                      onClick={handleOpenEditEvent}
                     >
                       Modifier l'événement
                     </Button>
@@ -566,7 +768,7 @@ const AccountPage: React.FC<AccountPageProps> = ({ currentUser, onBack, onEventS
                       startIcon={<CancelIcon />}
                       onClick={() => handleCancelEvent(selectedEvent.id)}
                     >
-                      Annuler l'événement
+                      Supprimer l'événement
                     </Button>
                   </Box>
                 </CardContent>
@@ -578,6 +780,39 @@ const AccountPage: React.FC<AccountPageProps> = ({ currentUser, onBack, onEventS
           <Button onClick={handleCloseEventAdmin}>Fermer</Button>
         </DialogActions>
       </Dialog>
+
+      {/* Menu contextuel pour les participants */}
+      <Menu
+        anchorEl={participantMenuAnchor}
+        open={Boolean(participantMenuAnchor)}
+        onClose={handleParticipantMenuClose}
+      >
+        <MenuItem onClick={handleMuteParticipant}>
+          <MuteIcon sx={{ mr: 1 }} fontSize="small" />
+          {selectedParticipant?.role === 'muted' ? 'Réactiver le chat' : 'Désactiver le chat'}
+        </MenuItem>
+        <MenuItem onClick={handlePromoteParticipant}>
+          <AdminIcon sx={{ mr: 1 }} fontSize="small" />
+          {selectedParticipant?.role === 'admin' ? 'Retirer admin' : 'Promouvoir administrateur'}
+        </MenuItem>
+        <Divider />
+        <MenuItem onClick={handleKickParticipant} sx={{ color: 'error.main' }}>
+          <KickIcon sx={{ mr: 1 }} fontSize="small" />
+          Exclure de l'événement
+        </MenuItem>
+      </Menu>
+
+      {/* Modal d'édition d'événement */}
+      {selectedEvent && (
+        <CreateEventModal
+          open={editEventOpen}
+          onClose={handleCloseEditEvent}
+          onCreateEvent={handleUpdateEvent}
+          userPosition={null}
+          initialEvent={selectedEvent}
+        />
+      )}
+
       {/* Snackbar de retour utilisateur */}
       <Snackbar
         open={snackbar.open}
