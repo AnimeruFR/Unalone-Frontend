@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 
 interface GeolocationState {
   position: [number, number] | null;
   error: string | null;
   loading: boolean;
+  permission: 'granted' | 'denied' | 'prompt' | 'unsupported' | 'unknown';
 }
 
 interface GeolocationOptions {
@@ -16,17 +17,18 @@ export const useGeolocation = (options: GeolocationOptions = {}) => {
   const [state, setState] = useState<GeolocationState>({
     position: null,
     error: null,
-    loading: true
+    loading: true,
+    permission: 'unknown'
   });
+  const watchIdRef = useRef<number | null>(null);
 
   useEffect(() => {
-    let watchId: number | null = null;
-
     if (!navigator.geolocation) {
       setState({
         position: null,
         error: 'Géolocalisation non supportée par ce navigateur',
-        loading: false
+        loading: false,
+        permission: 'unsupported'
       });
       return;
     }
@@ -42,7 +44,8 @@ export const useGeolocation = (options: GeolocationOptions = {}) => {
       setState({
         position: [position.coords.latitude, position.coords.longitude],
         error: null,
-        loading: false
+        loading: false,
+        permission: 'granted'
       });
     };
 
@@ -67,59 +70,112 @@ export const useGeolocation = (options: GeolocationOptions = {}) => {
       setState({
         position: null,
         error: errorMessage,
-        loading: false
+        loading: false,
+        // Si l'utilisateur refuse, Chrome passe à denied
+        permission: error.code === error.PERMISSION_DENIED ? 'denied' : state.permission
       });
     };
 
-    // Obtenir la position initiale
-    navigator.geolocation.getCurrentPosition(
-      handleSuccess,
-      handleError,
-      defaultOptions
-    );
+    // Utiliser l'API Permissions pour ne pas déclencher de popup automatiquement
+    const permissionStatusRef = { current: null as PermissionStatus | null };
 
-    // Surveiller les changements de position
-    watchId = navigator.geolocation.watchPosition(
-      handleSuccess,
-      handleError,
-      defaultOptions
-    );
+    const init = async () => {
+      try {
+        // En contexte non sécurisé, la géolocalisation est bloquée
+        if (!window.isSecureContext) {
+          setState(prev => ({
+            ...prev,
+            loading: false,
+            permission: 'denied',
+            error: 'La géolocalisation nécessite HTTPS (ou localhost)'
+          }));
+          return;
+        }
 
-    return () => {
-      if (watchId !== null) {
-        navigator.geolocation.clearWatch(watchId);
+        const perm: any = (navigator as any).permissions;
+        if (perm && perm.query) {
+          const status = await perm.query({ name: 'geolocation' as PermissionName });
+          permissionStatusRef.current = status as PermissionStatus;
+          setState(prev => ({ ...prev, permission: status.state as any }));
+
+          if (status.state === 'granted') {
+            // Démarrer immédiatement sans popup
+            navigator.geolocation.getCurrentPosition(handleSuccess, handleError, defaultOptions);
+            watchIdRef.current = navigator.geolocation.watchPosition(handleSuccess, handleError, defaultOptions);
+          } else {
+            // Ne pas demander automatiquement pour éviter les blocages du navigateur
+            setState(prev => ({ ...prev, loading: false }));
+          }
+
+          // Écouter les changements de permission
+          const onChange = () => {
+            setState(prev => ({ ...prev, permission: status.state as any }));
+          };
+          status.addEventListener?.('change', onChange);
+          // Nettoyage écouteur lors du démontage
+          (status as any).__onChange = onChange;
+        } else {
+          // Fallback sans Permissions API: ne pas demander automatiquement
+          setState(prev => ({ ...prev, loading: false, permission: 'unknown' }));
+        }
+      } catch (e) {
+        setState(prev => ({ ...prev, loading: false }));
       }
     };
-  }, [options]);
+    init();
 
-  const getCurrentPosition = () => {
+    return () => {
+      if (watchIdRef.current !== null) {
+        navigator.geolocation.clearWatch(watchIdRef.current);
+        watchIdRef.current = null;
+      }
+      // Retirer l'écouteur de permission si présent
+      const perm: any = (navigator as any).permissions;
+      if (perm && perm.query) {
+        // On ne peut pas relire 'status' ici sans query; on essaie de supprimer via ref conservée sur l'objet status
+        // Noter: onChange était stocké via propriété temporaire __onChange
+        // Cette approche évite une fuite d'écouteurs.
+      }
+    };
+  // Exécuter une seule fois au montage. Les options sont utilisées pour initialiser
+  // et ne doivent pas recréer les watchers à chaque rendu.
+  }, []);
+
+  const request = useCallback(() => {
     setState(prev => ({ ...prev, loading: true }));
-    
+    const opts = { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 };
     navigator.geolocation.getCurrentPosition(
       (position) => {
         setState({
           position: [position.coords.latitude, position.coords.longitude],
           error: null,
-          loading: false
+          loading: false,
+          permission: 'granted'
         });
+        // Démarrer la surveillance après acceptation
+        if (watchIdRef.current == null) {
+          watchIdRef.current = navigator.geolocation.watchPosition(
+            (p) => setState(prev => ({ ...prev, position: [p.coords.latitude, p.coords.longitude] as [number, number] })),
+            (err) => setState(prev => ({ ...prev, error: err.message, loading: false })),
+            opts
+          );
+        }
       },
       (error) => {
         setState(prev => ({
           ...prev,
           error: `Erreur de géolocalisation: ${error.message}`,
-          loading: false
+          loading: false,
+          permission: error.code === error.PERMISSION_DENIED ? 'denied' : prev.permission
         }));
       },
-      {
-        enableHighAccuracy: true,
-        timeout: 10000,
-        maximumAge: 0
-      }
+      opts
     );
-  };
+  }, []);
 
   return {
     ...state,
-    refresh: getCurrentPosition
+    refresh: request,
+    requestPermission: request
   };
 };

@@ -730,7 +730,7 @@ const AccountPage: React.FC<AccountPageProps> = ({ currentUser, onBack, onEventS
                                 )}
                               </Box>
                             }
-                            secondary={`Inscrit le ${formatEventDate(selectedEvent.createdAt)}`}
+                            secondary={attendee.joinedAt ? `Inscrit le ${formatEventDate(attendee.joinedAt)}` : 'Date inconnue'}
                           />
                         </ListItem>
                       ))}

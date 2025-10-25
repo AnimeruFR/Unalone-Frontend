@@ -44,11 +44,19 @@ apiClient.interceptors.response.use(
     console.error('Erreur API:', error.response?.status, error.response?.data);
     
     // Si le token est expiré ou invalide (401), déconnecter automatiquement
+    // SAUF si c'est une tentative de connexion/inscription (pas de token présent)
     if (error.response?.status === 401) {
-      console.log('Token expiré ou invalide, déconnexion automatique');
-      localStorage.removeItem('authToken');
-      // Recharger la page pour réinitialiser l'état de l'app
-      window.location.reload();
+      const hasToken = localStorage.getItem('authToken');
+      const isAuthEndpoint = error.config?.url?.includes('/auth/login') || 
+                             error.config?.url?.includes('/auth/register');
+      
+      // Ne recharger que si on avait un token (session expirée) et que ce n'est pas une route d'auth
+      if (hasToken && !isAuthEndpoint) {
+        console.log('Token expiré ou invalide, déconnexion automatique');
+        localStorage.removeItem('authToken');
+        // Recharger la page pour réinitialiser l'état de l'app
+        window.location.reload();
+      }
     }
     
     return Promise.reject(error);
@@ -67,7 +75,7 @@ export interface Event {
   lat: number;
   lng: number;
   maxAttendees?: number;
-  attendees: Array<{id: string; name: string; role?: string}>;
+  attendees: Array<{id: string; name: string; role?: string; joinedAt?: string}>;
   contactLink?: string;
   createdBy: string;
   createdAt: string;
@@ -134,6 +142,7 @@ const transformBackendEventToFrontend = (e: any): Event => {
         id: (p?.user?._id ?? p?.user ?? '').toString(),
         name: (p?.user?.username ?? 'Invité').toString(),
         role: p?.role ?? 'member', // Inclure le rôle du participant
+        joinedAt: p?.joinedAt ?? null, // Inclure la date d'inscription
       }))
     : [];
 

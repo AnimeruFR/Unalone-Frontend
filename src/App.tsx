@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { ThemeProvider, CssBaseline, Box, Snackbar, Alert, Fab, Button } from '@mui/material';
+import { ThemeProvider, CssBaseline, Box, Snackbar, Alert, Fab, Button, Tooltip } from '@mui/material';
 import MapComponent from './components/MapComponent';
 import SidebarComponent from './components/SidebarComponent';
 import CreateEventModal from './components/CreateEventModal';
@@ -32,7 +32,21 @@ function App() {
   const [chatOpen, setChatOpen] = useState(false);
 
   // Géolocalisation
-  const { position: userPosition } = useGeolocation();
+  const { position: userPosition, permission: geoPermission, requestPermission: requestGeo, error: geoError } = useGeolocation();
+
+  const handleRequestGeo = () => {
+    if (geoPermission === 'denied') {
+      // Ne pas rappeler l'API, afficher des instructions claires
+      setSnackbar({
+        open: true,
+        message:
+          "Localisation refusée. Cliquez sur l'icône cadenas à côté de l'URL > Paramètres du site > Localisation > Autoriser, puis rechargez la page.",
+        severity: 'error',
+      });
+      return;
+    }
+    requestGeo();
+  };
 
   // ID utilisateur temporaire
   const currentUserId = apiUtils.generateTempUserId();
@@ -160,6 +174,7 @@ function App() {
           id: (p?.user?._id ?? p?.user ?? '').toString(),
           name: (p?.user?.username ?? 'Invité').toString(),
           role: p?.role ?? 'member', // Inclure le rôle
+          joinedAt: p?.joinedAt ?? null, // Inclure la date d'inscription
         }))
       : [];
     return {
@@ -228,6 +243,12 @@ function App() {
   };
 
   const handleJoinEvent = async (eventId: string) => {
+    // Si l'utilisateur n'est pas connecté, afficher une erreur et ouvrir la modale d'authentification
+    if (!isAuthenticated) {
+      showSnackbar('Vous devez être connecté pour rejoindre un événement', 'error');
+      setAuthOpen(true);
+      return;
+    }
     try {
       const updatedEvent = await eventsApi.join(eventId);
       setEvents(prev => prev.map(event => (event.id === eventId ? updatedEvent : event)));
@@ -357,6 +378,21 @@ function App() {
                 userPosition={userPosition}
                 selectedEventId={selectedEventId}
               />
+
+              {/* Bouton discret pour activer la géolocalisation, afin d'éviter les blocages du navigateur */}
+              {geoPermission !== 'granted' && (
+                <Box sx={{ position: 'absolute', left: 16, bottom: 16, zIndex: 1000 }}>
+                  <Tooltip title={
+                    geoPermission === 'denied'
+                      ? "Permission refusée. Autorisez-la via l'icône cadenas à côté de l'URL, puis réessayez."
+                      : geoError || 'Cliquez pour autoriser la géolocalisation'
+                  }>
+                    <Button size="small" variant="contained" onClick={handleRequestGeo}>
+                      Activer ma position
+                    </Button>
+                  </Tooltip>
+                </Box>
+              )}
             </Box>
           </>
         ) : (

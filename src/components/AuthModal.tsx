@@ -29,6 +29,11 @@ const AuthModal: React.FC<AuthModalProps> = ({ open, onClose, onAuthenticated })
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
+  const handleTabChange = (newTab: 'login' | 'register') => {
+    setTab(newTab);
+    setError(''); // Réinitialiser l'erreur lors du changement d'onglet
+  };
+
   const reset = () => {
     setIdentifier('');
     setPassword('');
@@ -46,10 +51,17 @@ const AuthModal: React.FC<AuthModalProps> = ({ open, onClose, onAuthenticated })
 
   const handleLogin = async () => {
     setError('');
-    if (!identifier || !password) {
-      setError('Veuillez renseigner vos identifiants et mot de passe');
+    
+    // Validation côté client
+    if (!identifier) {
+      setError('Veuillez renseigner votre email ou nom d\'utilisateur');
       return;
     }
+    if (!password) {
+      setError('Veuillez renseigner votre mot de passe');
+      return;
+    }
+    
     try {
       setLoading(true);
       const res = await authApi.login(identifier, password);
@@ -58,7 +70,32 @@ const AuthModal: React.FC<AuthModalProps> = ({ open, onClose, onAuthenticated })
       onAuthenticated?.(res.user);
       handleClose();
     } catch (e: any) {
-      setError(e?.response?.data?.message || 'Échec de la connexion');
+      console.error('Erreur de connexion:', e);
+      const response = e?.response?.data;
+      
+      // Gérer les différents types d'erreurs
+      if (response?.errors && Array.isArray(response.errors)) {
+        // Erreurs de validation détaillées
+        const errorMessages = response.errors.map((err: any) => err.msg || err.message).join('. ');
+        setError(errorMessages);
+      } else if (response?.message) {
+        // Message d'erreur du serveur
+        setError(response.message);
+      } else if (e?.response?.status === 401) {
+        // Erreur d'authentification (401)
+        setError('Email/nom d\'utilisateur ou mot de passe incorrect');
+      } else if (e?.response?.status === 403) {
+        // Compte banni (403)
+        setError('Votre compte a été banni. Contactez le support.');
+      } else if (e?.response?.status >= 500) {
+        // Erreur serveur
+        setError('Erreur serveur. Veuillez réessayer plus tard.');
+      } else if (e?.code === 'ERR_NETWORK') {
+        // Erreur réseau
+        setError('Impossible de se connecter au serveur. Vérifiez votre connexion internet.');
+      } else {
+        setError('Échec de la connexion. Vérifiez vos identifiants.');
+      }
     } finally {
       setLoading(false);
     }
@@ -70,6 +107,29 @@ const AuthModal: React.FC<AuthModalProps> = ({ open, onClose, onAuthenticated })
       setError('Veuillez renseigner nom d\'utilisateur, email et mot de passe');
       return;
     }
+    
+    // Validation côté client pour un meilleur retour immédiat
+    if (username.length < 3 || username.length > 30) {
+      setError('Le nom d\'utilisateur doit contenir entre 3 et 30 caractères');
+      return;
+    }
+    if (!/^[a-zA-Z0-9_]+$/.test(username)) {
+      setError('Le nom d\'utilisateur ne peut contenir que des lettres, chiffres et underscores');
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setError('Format d\'email invalide');
+      return;
+    }
+    if (password.length < 6) {
+      setError('Le mot de passe doit contenir au moins 6 caractères');
+      return;
+    }
+    if (!/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(password)) {
+      setError('Le mot de passe doit contenir au moins une minuscule, une majuscule et un chiffre');
+      return;
+    }
+    
     try {
       setLoading(true);
       const res = await authApi.register({ username, email, password });
@@ -78,7 +138,16 @@ const AuthModal: React.FC<AuthModalProps> = ({ open, onClose, onAuthenticated })
       onAuthenticated?.(res.user);
       handleClose();
     } catch (e: any) {
-      setError(e?.response?.data?.message || 'Échec de l\'inscription');
+      const response = e?.response?.data;
+      if (response?.errors && Array.isArray(response.errors)) {
+        // Afficher les erreurs de validation détaillées
+        const errorMessages = response.errors.map((err: any) => err.msg || err.message).join('. ');
+        setError(errorMessages);
+      } else if (response?.message) {
+        setError(response.message);
+      } else {
+        setError('Échec de l\'inscription. Vérifiez les informations saisies.');
+      }
     } finally {
       setLoading(false);
     }
@@ -90,7 +159,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ open, onClose, onAuthenticated })
       <DialogContent>
         <Tabs 
           value={tab} 
-          onChange={(_, v) => setTab(v)} 
+          onChange={(_, v) => handleTabChange(v)} 
           centered
           sx={{ mb: 2 }}
         >
