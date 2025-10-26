@@ -170,8 +170,8 @@ const SidebarComponent: React.FC<SidebarProps> = ({
   }, [selectedEventId]);
 
   return (
-    <Box sx={{ 
-      width: 380, 
+    <Box className="sidebar" sx={{ 
+      width: { xs: '100%', sm: 360, md: 380 },
       height: '100vh', 
       background: 'linear-gradient(180deg, #ffffff 0%, #f8f9ff 100%)',
       display: 'flex',

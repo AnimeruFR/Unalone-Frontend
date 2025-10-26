@@ -438,12 +438,42 @@ export const apiUtils = {
   }
 };
 
+  // API RGPD
+  export const rgpdApi = {
+    // Exporter toutes les données de l'utilisateur
+    exportData: async (): Promise<any> => {
+      const response = await apiClient.get('/rgpd/export');
+      return response.data;
+    },
+
+    // Supprimer le compte utilisateur
+    deleteAccount: async (password: string): Promise<any> => {
+      const response = await apiClient.delete('/rgpd/delete-account', {
+        data: { password }
+      });
+      return response.data;
+    },
+
+    // Récupérer l'historique des consentements
+    getConsentHistory: async (): Promise<any> => {
+      const response = await apiClient.get('/rgpd/consent-history');
+      return response.data;
+    },
+
+    // Enregistrer les préférences de consentement
+    saveConsent: async (preferences: any): Promise<any> => {
+      const response = await apiClient.post('/rgpd/consent', { preferences });
+      return response.data;
+    }
+  };
+
 const api = {
   events: eventsApi,
   auth: authApi,
   users: usersApi,
   location: locationApi,
-  utils: apiUtils
+    utils: apiUtils,
+    rgpd: rgpdApi
 };
 
 export default api;

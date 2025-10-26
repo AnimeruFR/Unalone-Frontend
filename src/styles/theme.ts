@@ -307,4 +307,28 @@ export const customStyles = `
       height: 40vh !important;
     }
   }
+
+  /* Safe-area for iOS notches */
+  html, body, #root {
+    padding-top: env(safe-area-inset-top);
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+    padding-bottom: env(safe-area-inset-bottom);
+    background-color: #f8f9ff;
+  }
+
+  .floating-fab {
+    position: absolute;
+    bottom: calc(16px + env(safe-area-inset-bottom));
+    right: calc(16px + env(safe-area-inset-right));
+    z-index: 1100;
+  }
+
+  .appbar-safe {
+    padding-top: env(safe-area-inset-top);
+  }
+
+  .drawer-paper-safe {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
 `;

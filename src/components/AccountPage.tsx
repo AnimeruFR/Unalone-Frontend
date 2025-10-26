@@ -26,7 +26,10 @@ import {
   Menu,
   MenuItem,
   ListItemAvatar,
-  Tooltip
+  Tooltip,
+  Switch,
+  FormControlLabel,
+  CircularProgress
 } from '@mui/material';
 import {
   Person as PersonIcon,
@@ -44,7 +47,7 @@ import {
   AdminPanelSettings as AdminIcon,
   MoreVert as MoreVertIcon
 } from '@mui/icons-material';
-import { Event, User, eventsApi, authApi } from '../services/api';
+import { Event, User, eventsApi, authApi, rgpdApi, apiUtils } from '../services/api';
 import CreateEventModal from './CreateEventModal';
 
 interface AccountPageProps {
@@ -102,6 +105,17 @@ const AccountPage: React.FC<AccountPageProps> = ({ currentUser, onBack, onEventS
     message: '',
     severity: 'success'
   });
+  // RGPD state
+  const [consentPrefs, setConsentPrefs] = useState<{necessary: boolean; functional: boolean; analytics: boolean; marketing: boolean}>(
+    { necessary: true, functional: false, analytics: false, marketing: false }
+  );
+  const [consentDate, setConsentDate] = useState<string | null>(null);
+  const [loadingConsent, setLoadingConsent] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [deletePassword, setDeletePassword] = useState('');
+  const [deleteError, setDeleteError] = useState('');
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const handleCloseSnackbar = () => setSnackbar(prev => ({ ...prev, open: false }));
 
@@ -119,8 +133,49 @@ const AccountPage: React.FC<AccountPageProps> = ({ currentUser, onBack, onEventS
       
       // Charger les événements de l'utilisateur
       loadUserEvents();
+
+      // Charger les préférences de consentement
+      loadConsent();
     }
   }, [currentUser]);
+
+  const loadConsent = async () => {
+    setLoadingConsent(true);
+    try {
+      // Local
+      const raw = localStorage.getItem('cookieConsent');
+      const rawDate = localStorage.getItem('cookieConsentDate');
+      if (raw) {
+        const prefs = JSON.parse(raw);
+        setConsentPrefs({
+          necessary: true,
+          functional: !!prefs.functional,
+          analytics: !!prefs.analytics,
+          marketing: !!prefs.marketing
+        });
+      }
+      if (rawDate) setConsentDate(rawDate);
+
+      // Serveur (si connecté)
+      if (apiUtils.isAuthenticated()) {
+        const res = await rgpdApi.getConsentHistory();
+        if (res?.currentConsent) {
+          const p = res.currentConsent;
+          setConsentPrefs({
+            necessary: true,
+            functional: !!p.functional,
+            analytics: !!p.analytics,
+            marketing: !!p.marketing
+          });
+          if (p.consentDate) setConsentDate(p.consentDate);
+        }
+      }
+    } catch (e) {
+      console.warn('Impossible de charger les préférences de consentement', e);
+    } finally {
+      setLoadingConsent(false);
+    }
+  };
 
   const loadUserEvents = async () => {
     try {
@@ -408,6 +463,97 @@ const AccountPage: React.FC<AccountPageProps> = ({ currentUser, onBack, onEventS
     }
   };
 
+  // RGPD handlers
+  const handleConsentToggle = (key: 'functional' | 'analytics' | 'marketing') => (
+    event: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    setConsentPrefs(prev => ({ ...prev, [key]: event.target.checked }));
+  };
+
+  const saveConsentLocallyAndServer = async (prefs: {necessary: boolean; functional: boolean; analytics: boolean; marketing: boolean}) => {
+    localStorage.setItem('cookieConsent', JSON.stringify(prefs));
+    const now = new Date().toISOString();
+    localStorage.setItem('cookieConsentDate', now);
+    setConsentDate(now);
+    try {
+      await rgpdApi.saveConsent(prefs);
+    } catch { /* non bloquant */ }
+  };
+
+  const handleSaveConsent = async () => {
+    try {
+      await saveConsentLocallyAndServer(consentPrefs);
+      setSnackbar({ open: true, message: 'Préférences de cookies enregistrées ✅', severity: 'success' });
+    } catch (e) {
+      setSnackbar({ open: true, message: 'Erreur lors de l’enregistrement des préférences', severity: 'error' });
+    }
+  };
+
+  const handleRevokeConsent = async () => {
+    const revoked = { necessary: true, functional: false, analytics: false, marketing: false };
+    setConsentPrefs(revoked);
+    await saveConsentLocallyAndServer(revoked);
+    setSnackbar({ open: true, message: 'Consentement révoqué. Seuls les cookies nécessaires restent actifs.', severity: 'info' });
+  };
+
+  const handleDownloadData = async () => {
+    if (!apiUtils.isAuthenticated()) {
+      setSnackbar({ open: true, message: 'Connectez-vous pour exporter vos données', severity: 'warning' });
+      return;
+    }
+    setIsExporting(true);
+    try {
+      const response = await rgpdApi.exportData();
+      const dataStr = JSON.stringify(response.data, null, 2);
+      const dataBlob = new Blob([dataStr], { type: 'application/json' });
+      const url = URL.createObjectURL(dataBlob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `unalone-mes-donnees-${new Date().toISOString().split('T')[0]}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      setSnackbar({ open: true, message: 'Vos données ont été exportées', severity: 'success' });
+    } catch (e: any) {
+      setSnackbar({ open: true, message: e?.response?.data?.message || 'Erreur lors de l’export des données', severity: 'error' });
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const openDeleteDialog = () => {
+    setShowDeleteDialog(true);
+    setDeletePassword('');
+    setDeleteError('');
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deletePassword.trim()) {
+      setDeleteError('Veuillez entrer votre mot de passe');
+      return;
+    }
+    setIsDeleting(true);
+    setDeleteError('');
+    try {
+      await rgpdApi.deleteAccount(deletePassword);
+      localStorage.removeItem('authToken');
+      setSnackbar({ open: true, message: 'Compte supprimé définitivement', severity: 'success' });
+      setShowDeleteDialog(false);
+      setTimeout(() => window.location.reload(), 800);
+    } catch (e: any) {
+      setDeleteError(e?.response?.data?.message || 'Suppression impossible');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const handleCancelDelete = () => {
+    setShowDeleteDialog(false);
+    setDeletePassword('');
+    setDeleteError('');
+  };
+
   if (!currentUser) {
     return (
       <Box sx={{ p: 3, textAlign: 'center' }}>
@@ -632,22 +778,87 @@ const AccountPage: React.FC<AccountPageProps> = ({ currentUser, onBack, onEventS
 
         <TabPanel value={currentTab} index={2}>
           {/* Paramètres */}
-          <Card>
-            <CardContent>
-              <Typography variant="h6" sx={{ mb: 2 }}>Paramètres du compte</Typography>
-              <Alert severity="info" sx={{ mb: 2 }}>
-                Les paramètres avancés seront disponibles dans une prochaine version.
-              </Alert>
-              <Box sx={{ display: 'grid', gap: 2 }}>
-                <Button variant="outlined" color="warning">
-                  Changer le mot de passe
-                </Button>
-                <Button variant="outlined" color="error">
-                  Supprimer le compte
-                </Button>
-              </Box>
-            </CardContent>
-          </Card>
+          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 2 }}>
+            <Box>
+              <Card>
+                <CardContent>
+                  <Typography variant="h6" sx={{ mb: 2 }}>Vie privée & RGPD</Typography>
+
+                  {loadingConsent ? (
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                      <CircularProgress size={20} />
+                      <Typography>Chargement des préférences…</Typography>
+                    </Box>
+                  ) : (
+                    <>
+                      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                        Gérez vos préférences de cookies. Les cookies nécessaires sont toujours actifs.
+                        {consentDate && (
+                          <>
+                            <br />Dernier consentement: {new Date(consentDate).toLocaleString('fr-FR')}
+                          </>
+                        )}
+                      </Typography>
+
+                      <FormControlLabel
+                        control={<Switch checked disabled />}
+                        label="Cookies nécessaires (obligatoires)"
+                        sx={{ display: 'block', mb: 1 }}
+                      />
+                      <FormControlLabel
+                        control={<Switch checked={consentPrefs.functional} onChange={handleConsentToggle('functional')} />}
+                        label="Cookies fonctionnels"
+                        sx={{ display: 'block', mb: 1 }}
+                      />
+                      <FormControlLabel
+                        control={<Switch checked={consentPrefs.analytics} onChange={handleConsentToggle('analytics')} />}
+                        label="Cookies analytiques"
+                        sx={{ display: 'block', mb: 1 }}
+                      />
+                      <FormControlLabel
+                        control={<Switch checked={consentPrefs.marketing} onChange={handleConsentToggle('marketing')} />}
+                        label="Cookies marketing"
+                        sx={{ display: 'block' }}
+                      />
+
+                      <Box sx={{ display: 'flex', gap: 1, mt: 2, flexWrap: 'wrap' }}>
+                        <Button variant="contained" onClick={handleSaveConsent}>
+                          Enregistrer mes préférences
+                        </Button>
+                        <Button variant="outlined" color="warning" onClick={handleRevokeConsent}>
+                          Révoquer mon consentement
+                        </Button>
+                        <Button 
+                          variant="outlined" 
+                          onClick={handleDownloadData}
+                          startIcon={isExporting ? <CircularProgress size={16} /> : undefined}
+                          disabled={isExporting}
+                        >
+                          Télécharger mes données
+                        </Button>
+                      </Box>
+                    </>
+                  )}
+                </CardContent>
+              </Card>
+            </Box>
+
+            <Box>
+              <Card>
+                <CardContent>
+                  <Typography variant="h6" sx={{ mb: 2 }}>Paramètres du compte</Typography>
+                  <Box sx={{ display: 'grid', gap: 2 }}>
+                    <Button variant="outlined" color="warning">
+                      Changer le mot de passe
+                    </Button>
+                    <Button variant="outlined" color="error" onClick={openDeleteDialog}>
+                      Supprimer le compte
+                    </Button>
+                  </Box>
+                </CardContent>
+              </Card>
+            </Box>
+          </Box>
         </TabPanel>
       </Box>
 
@@ -824,6 +1035,44 @@ const AccountPage: React.FC<AccountPageProps> = ({ currentUser, onBack, onEventS
           {snackbar.message}
         </Alert>
       </Snackbar>
+
+      {/* Dialog suppression de compte */}
+      <Dialog open={showDeleteDialog} onClose={handleCancelDelete} maxWidth="sm" fullWidth>
+        <DialogTitle sx={{ color: 'error.main', fontWeight: 600 }}>
+          Supprimer définitivement mon compte
+        </DialogTitle>
+        <DialogContent>
+          <Alert severity="error" sx={{ mb: 2 }}>
+            Cette action est irréversible. Toutes vos données (événements, participations, messages) seront supprimées.
+          </Alert>
+          <Typography variant="body2" sx={{ mb: 1 }}>
+            Pour confirmer, entrez votre mot de passe :
+          </Typography>
+          <TextField
+            fullWidth
+            type="password"
+            label="Mot de passe"
+            value={deletePassword}
+            onChange={(e) => setDeletePassword(e.target.value)}
+            error={!!deleteError}
+            helperText={deleteError}
+            disabled={isDeleting}
+            autoFocus
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCancelDelete} disabled={isDeleting}>Annuler</Button>
+          <Button 
+            variant="contained" 
+            color="error" 
+            onClick={handleConfirmDelete}
+            disabled={isDeleting || !deletePassword.trim()}
+            startIcon={isDeleting ? <CircularProgress size={16} color="inherit" /> : undefined}
+          >
+            {isDeleting ? 'Suppression…' : 'Confirmer la suppression'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };

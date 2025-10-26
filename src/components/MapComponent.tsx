@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, forwardRef, useImperativeHandle } from 'react';
 import L from 'leaflet';
 import { Event } from '../services/api';
 
@@ -10,14 +10,19 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
 });
 
-interface MapComponentProps {
+export interface MapComponentProps {
   events: Event[];
   onEventSelect: (event: Event) => void;
   userPosition: [number, number] | null;
   selectedEventId?: string | null;
+  onMapBackgroundClick?: () => void;
 }
 
-const MapComponent: React.FC<MapComponentProps> = ({ events, onEventSelect, userPosition, selectedEventId }) => {
+export type MapComponentHandle = {
+  recenterToUser: () => void;
+};
+
+const MapComponent = forwardRef<MapComponentHandle, MapComponentProps>(({ events, onEventSelect, userPosition, selectedEventId, onMapBackgroundClick }, ref) => {
   const mapContainer = useRef<HTMLDivElement>(null);
   const mapInstance = useRef<L.Map | null>(null);
   const markersRef = useRef<{[key: string]: L.Marker}>({});
@@ -26,8 +31,16 @@ const MapComponent: React.FC<MapComponentProps> = ({ events, onEventSelect, user
   useEffect(() => {
     if (!mapContainer.current || mapInstance.current) return;
 
+    // Détecter le mobile pour adapter les interactions
+    const isMobile = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(max-width: 768px)').matches;
+
     // Initialisation de la carte
-    const map = L.map(mapContainer.current, { zoomControl: true }).setView([48.8566, 2.3522], 13);
+    const map = L.map(mapContainer.current, {
+      zoomControl: true,
+      scrollWheelZoom: !isMobile, // éviter les conflits de scroll sur mobile
+      touchZoom: true,
+      dragging: true,
+    }).setView([48.8566, 2.3522], 13);
     
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
@@ -36,7 +49,16 @@ const MapComponent: React.FC<MapComponentProps> = ({ events, onEventSelect, user
 
     mapInstance.current = map;
 
+    // Invalider la taille lors des redimensionnements (utile quand la sidebar devient un panneau mobile)
+    const handleResize = () => {
+      if (mapInstance.current) {
+        setTimeout(() => mapInstance.current && mapInstance.current.invalidateSize(), 150);
+      }
+    };
+    window.addEventListener('resize', handleResize);
+
     return () => {
+      window.removeEventListener('resize', handleResize);
       if (mapInstance.current) {
         mapInstance.current.remove();
         mapInstance.current = null;
@@ -168,6 +190,29 @@ const MapComponent: React.FC<MapComponentProps> = ({ events, onEventSelect, user
     };
   }, [events, onEventSelect]);
 
+  // Click sur le fond de carte -> fermeture du panneau sur mobile
+  useEffect(() => {
+    if (!mapInstance.current) return;
+    const handler = () => onMapBackgroundClick && onMapBackgroundClick();
+    mapInstance.current.on('click', handler);
+    return () => {
+      mapInstance.current && mapInstance.current.off('click', handler);
+    };
+  }, [onMapBackgroundClick]);
+
+  // Méthode impérative pour recentrer sur l'utilisateur
+  useImperativeHandle(ref, () => ({
+    recenterToUser: () => {
+      if (mapInstance.current && userPosition) {
+        mapInstance.current.setView(userPosition, 15, { animate: true });
+        // Ouvrir le popup utilisateur si présent
+        if (userMarkerRef.current) {
+          userMarkerRef.current.openPopup();
+        }
+      }
+    },
+  }), [userPosition]);
+
   return (
     <div
       ref={mapContainer}
@@ -175,6 +220,6 @@ const MapComponent: React.FC<MapComponentProps> = ({ events, onEventSelect, user
       className="map-container"
     />
   );
-};
+});
 
 export default MapComponent;

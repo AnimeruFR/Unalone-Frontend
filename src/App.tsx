@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { ThemeProvider, CssBaseline, Box, Snackbar, Alert, Fab, Button, Tooltip } from '@mui/material';
-import MapComponent from './components/MapComponent';
+import { ThemeProvider, CssBaseline, Box, Snackbar, Alert, Fab, Button, Tooltip, AppBar, Toolbar, IconButton, Drawer, useMediaQuery } from '@mui/material';
+import MapComponent, { MapComponentHandle } from './components/MapComponent';
 import SidebarComponent from './components/SidebarComponent';
 import CreateEventModal from './components/CreateEventModal';
 import AccountPage from './components/AccountPage';
@@ -9,9 +9,11 @@ import { useGeolocation } from './hooks/useGeolocation';
 import { eventsApi, Event, CreateEventData, apiUtils, User, authApi } from './services/api';
 import { socketService } from './services/socket';
 import { unaloneTheme, customStyles } from './styles/theme';
-import { Add as AddIcon, AccountCircle as AccountIcon } from '@mui/icons-material';
+import { Add as AddIcon, AccountCircle as AccountIcon, Menu as MenuIcon, MyLocation as MyLocationIcon } from '@mui/icons-material';
 import AuthModal from './components/AuthModal';
 import EventDetailsModal from './components/EventDetailsModal';
+import CookieConsent from './components/CookieConsent';
+import RGPDMenu from './components/RGPDMenu';
 
 function App() {
   const [events, setEvents] = useState<Event[]>([]);
@@ -30,6 +32,9 @@ function App() {
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [selectedEventForModal, setSelectedEventForModal] = useState<Event | null>(null);
   const [chatOpen, setChatOpen] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const isMobile = useMediaQuery('(max-width:768px)');
+  const mapRef = React.useRef<MapComponentHandle | null>(null);
 
   // Géolocalisation
   const { position: userPosition, permission: geoPermission, requestPermission: requestGeo, error: geoError } = useGeolocation();
@@ -291,6 +296,9 @@ function App() {
     setCurrentView('map');
     setSelectedEventForModal(event);
     setChatOpen(false);
+    if (isMobile) {
+      setDrawerOpen(true);
+    }
   };
 
   const handleAuthenticated = (user: User) => {
@@ -350,33 +358,49 @@ function App() {
           overflow: 'hidden'
         }}
       >
+        {isMobile && (
+          <AppBar position="fixed" color="transparent" elevation={0} sx={{ backdropFilter: 'blur(6px)', background: 'rgba(255,255,255,0.6)' }}>
+            <Toolbar sx={{ display: 'flex', justifyContent: 'space-between' }}>
+              <IconButton edge="start" onClick={() => setDrawerOpen(true)} aria-label="open menu">
+                <MenuIcon />
+              </IconButton>
+              <Button variant="outlined" size="small" onClick={() => setAuthOpen(true)}>
+                {isAuthenticated ? ((currentUser as any)?.username || currentUser?.name || 'Mon compte') : 'Se connecter'}
+              </Button>
+            </Toolbar>
+          </AppBar>
+        )}
         {currentView === 'map' ? (
           <>
-            {/* Sidebar */}
-            <SidebarComponent
-              events={events}
-              onCreateEvent={() => setCreateModalOpen(true)}
-              onJoinEvent={handleJoinEvent}
-              onLeaveEvent={handleLeaveEvent}
-              onZoomToEvent={handleZoomToEvent}
-              onManageEvent={handleManageEvent}
-              userPosition={userPosition}
-              currentUserId={currentUserId}
-              onOpenAuth={() => setAuthOpen(true)}
-              isAuthenticated={isAuthenticated}
-              currentUser={currentUser}
-              onLogout={handleLogout}
-              onGoToAccount={handleGoToAccount}
-              selectedEventId={selectedEventId}
-            />
+            {/* Sidebar desktop only */}
+            {!isMobile && (
+              <SidebarComponent
+                events={events}
+                onCreateEvent={() => setCreateModalOpen(true)}
+                onJoinEvent={handleJoinEvent}
+                onLeaveEvent={handleLeaveEvent}
+                onZoomToEvent={handleZoomToEvent}
+                onManageEvent={handleManageEvent}
+                userPosition={userPosition}
+                currentUserId={currentUserId}
+                onOpenAuth={() => setAuthOpen(true)}
+                isAuthenticated={isAuthenticated}
+                currentUser={currentUser}
+                onLogout={handleLogout}
+                onGoToAccount={handleGoToAccount}
+                selectedEventId={selectedEventId}
+              />
+            )}
 
             {/* Carte */}
-            <Box sx={{ flex: 1, position: 'relative' }}>
+            <Box sx={{ flex: 1, position: 'relative', pt: isMobile ? '64px' : 0 }}>
               <MapComponent 
+                ref={mapRef}
                 events={events} 
                 onEventSelect={handleEventSelect} 
                 userPosition={userPosition}
                 selectedEventId={selectedEventId}
+                onMapBackgroundClick={() => { if (isMobile) setDrawerOpen(false); }}
               />
 
               {/* Bouton discret pour activer la géolocalisation, afin d'éviter les blocages du navigateur */}
@@ -393,7 +417,54 @@ function App() {
                   </Tooltip>
                 </Box>
               )}
+
+              {/* FAB Ma position sur mobile */}
+              {isMobile && (
+                <Fab 
+                  className="floating-fab"
+                  color="primary" 
+                  aria-label="Ma position"
+                  onClick={() => {
+                    if (geoPermission !== 'granted') {
+                      handleRequestGeo();
+                    } else {
+                      mapRef.current?.recenterToUser();
+                    }
+                  }}
+                >
+                  <MyLocationIcon />
+                </Fab>
+              )}
             </Box>
+
+            {/* Mobile Drawer bottom sheet for events list */}
+            {isMobile && (
+              <Drawer
+                anchor="bottom"
+                open={drawerOpen}
+                onClose={() => setDrawerOpen(false)}
+                PaperProps={{ sx: { height: '60vh', borderTopLeftRadius: 16, borderTopRightRadius: 16 } as any, className: 'drawer-paper-safe' }}
+              >
+                <Box sx={{ height: '100%', overflow: 'hidden' }}>
+                  <SidebarComponent
+                    events={events}
+                    onCreateEvent={() => setCreateModalOpen(true)}
+                    onJoinEvent={handleJoinEvent}
+                    onLeaveEvent={handleLeaveEvent}
+                    onZoomToEvent={handleZoomToEvent}
+                    onManageEvent={handleManageEvent}
+                    userPosition={userPosition}
+                    currentUserId={currentUserId}
+                    onOpenAuth={() => setAuthOpen(true)}
+                    isAuthenticated={isAuthenticated}
+                    currentUser={currentUser}
+                    onLogout={handleLogout}
+                    onGoToAccount={handleGoToAccount}
+                    selectedEventId={selectedEventId}
+                  />
+                </Box>
+              </Drawer>
+            )}
           </>
         ) : (
           /* Page Compte */
