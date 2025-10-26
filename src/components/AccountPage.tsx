@@ -29,7 +29,9 @@ import {
   Tooltip,
   Switch,
   FormControlLabel,
-  CircularProgress
+  CircularProgress,
+  useTheme,
+  useMediaQuery
 } from '@mui/material';
 import {
   Person as PersonIcon,
@@ -45,7 +47,8 @@ import {
   VolumeOff as MuteIcon,
   PersonRemove as KickIcon,
   AdminPanelSettings as AdminIcon,
-  MoreVert as MoreVertIcon
+  MoreVert as MoreVertIcon,
+  LocationOn as LocationOnIcon
 } from '@mui/icons-material';
 import { Event, User, eventsApi, authApi, rgpdApi, apiUtils } from '../services/api';
 import CreateEventModal from './CreateEventModal';
@@ -116,6 +119,10 @@ const AccountPage: React.FC<AccountPageProps> = ({ currentUser, onBack, onEventS
   const [deletePassword, setDeletePassword] = useState('');
   const [deleteError, setDeleteError] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
+  // UI responsive helpers and mobile actions menu anchor
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
+  const [actionMenuAnchor, setActionMenuAnchor] = useState<HTMLElement | null>(null);
 
   const handleCloseSnackbar = () => setSnackbar(prev => ({ ...prev, open: false }));
 
@@ -695,46 +702,64 @@ const AccountPage: React.FC<AccountPageProps> = ({ currentUser, onBack, onEventS
               <List>
                 {createdEvents.map((event) => (
                   <ListItem key={event.id} sx={{ mb: 1, bgcolor: 'rgba(0,0,0,0.02)', borderRadius: 1 }}>
-                    <ListItemText
-                      primary={event.title}
-                      secondary={
-                        <Box>
-                          <Typography variant="body2" color="text.secondary">
-                            📅 {formatEventDate(event.datetime)}
-                          </Typography>
-                          <Typography variant="body2" color="text.secondary">
-                            📍 {event.placeName}
-                          </Typography>
-                          <Typography variant="body2" color="text.secondary">
-                            👥 {event.attendees.length} participant{event.attendees.length > 1 ? 's' : ''}
-                          </Typography>
+                    <Box sx={{ width: '100%', display: 'flex', alignItems: isMobile ? 'flex-start' : 'center', flexDirection: isMobile ? 'column' : 'row' }}>
+                      <Box sx={{ flex: 1 }}>
+                        <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 0.5, wordBreak: 'break-word' }}>{event.title}</Typography>
+                        {/* Meta informations: stack lines on desktop for readability; keep inline/wrapping on mobile */}
+                        <Box
+                          sx={{
+                            display: 'flex',
+                            flexDirection: isMobile ? 'row' : 'column',
+                            flexWrap: isMobile ? 'wrap' : 'nowrap',
+                            alignItems: isMobile ? 'center' : 'flex-start',
+                            gap: isMobile ? 2 : 0.5,
+                            mb: 0.5,
+                          }}
+                        >
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, color: 'text.secondary' }}>
+                            <EventIcon sx={{ fontSize: 18, mr: 0.5, color: 'primary.main' }} />
+                            <Typography variant="body2">{formatEventDate(event.datetime)}</Typography>
+                          </Box>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, color: 'text.secondary' }}>
+                            <LocationOnIcon sx={{ fontSize: 18, mr: 0.5, color: 'secondary.main' }} />
+                            <Typography variant="body2">{event.placeName}</Typography>
+                          </Box>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, color: 'text.secondary' }}>
+                            <GroupIcon sx={{ fontSize: 18, mr: 0.5, color: 'grey.600' }} />
+                            <Typography variant="body2">{event.attendees.length} participant{event.attendees.length > 1 ? 's' : ''}</Typography>
+                          </Box>
                         </Box>
-                      }
-                    />
-                    <ListItemSecondaryAction>
-                      <IconButton 
-                        onClick={() => onEventSelect?.(event)}
-                        sx={{ mr: 1 }}
-                        title="Voir sur la carte"
-                      >
-                        <VisibilityIcon />
-                      </IconButton>
-                      <IconButton 
-                        onClick={() => handleEventAdmin(event)}
-                        sx={{ mr: 1 }}
-                        color="primary"
-                        title="Administrer"
-                      >
-                        <GroupIcon />
-                      </IconButton>
-                      <IconButton 
-                        onClick={() => handleDeleteEvent(event.id)}
-                        color="error"
-                        title="Supprimer"
-                      >
-                        <DeleteIcon />
-                      </IconButton>
-                    </ListItemSecondaryAction>
+                      </Box>
+                      {isMobile ? (
+                        <Box sx={{ mt: 1, ml: 0 }}>
+                          <IconButton onClick={(e) => setActionMenuAnchor(e.currentTarget)} size="small">
+                            <MoreVertIcon />
+                          </IconButton>
+                          <Menu
+                            anchorEl={actionMenuAnchor}
+                            open={Boolean(actionMenuAnchor)}
+                            onClose={() => setActionMenuAnchor(null)}
+                          >
+                            <MenuItem onClick={() => { setActionMenuAnchor(null); onEventSelect?.(event); }}>
+                              <VisibilityIcon sx={{ mr: 1 }} /> Voir sur la carte
+                            </MenuItem>
+                            <MenuItem onClick={() => { setActionMenuAnchor(null); handleEventAdmin(event); }}>
+                              <GroupIcon sx={{ mr: 1 }} /> Administrer
+                            </MenuItem>
+                            <MenuItem onClick={() => { setActionMenuAnchor(null); handleDeleteEvent(event.id); }} sx={{ color: 'error.main' }}>
+                              <DeleteIcon sx={{ mr: 1 }} /> Supprimer
+                            </MenuItem>
+                          </Menu>
+                        </Box>
+                      ) : (
+                        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', ml: 2, gap: 1 }}>
+                          <Tooltip title="Voir sur la carte"><span><IconButton onClick={() => onEventSelect?.(event)} size="small"><VisibilityIcon sx={{ color: 'grey.600' }} /></IconButton></span></Tooltip>
+                          <Tooltip title="Administrer"><span><IconButton onClick={() => handleEventAdmin(event)} size="small"><GroupIcon sx={{ color: 'primary.main' }} /></IconButton></span></Tooltip>
+                          <Tooltip title="Supprimer"><span><IconButton onClick={() => handleDeleteEvent(event.id)} size="small"><DeleteIcon sx={{ color: 'error.main' }} /></IconButton></span></Tooltip>
+                        </Box>
+                      )}
+                    </Box>
+  {/* Pour le menu d'actions sur mobile */}
                   </ListItem>
                 ))}
               </List>
@@ -751,16 +776,34 @@ const AccountPage: React.FC<AccountPageProps> = ({ currentUser, onBack, onEventS
               <List>
                 {joinedEvents.map((event) => (
                   <ListItem key={event.id} sx={{ mb: 1, bgcolor: 'rgba(0,0,0,0.02)', borderRadius: 1 }}>
+                    {/* Avoid nested <p> tags: we manage our own Typography and disable ListItemText wrappers */}
                     <ListItemText
-                      primary={event.title}
+                      disableTypography
+                      primary={
+                        <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 0.5, wordBreak: 'break-word' }}>
+                          {event.title}
+                        </Typography>
+                      }
                       secondary={
-                        <Box>
-                          <Typography variant="body2" color="text.secondary">
-                            📅 {formatEventDate(event.datetime)}
-                          </Typography>
-                          <Typography variant="body2" color="text.secondary">
-                            📍 {event.placeName}
-                          </Typography>
+                        <Box
+                          sx={{
+                            display: 'flex',
+                            flexDirection: isMobile ? 'row' : 'column',
+                            flexWrap: isMobile ? 'wrap' : 'nowrap',
+                            alignItems: isMobile ? 'center' : 'flex-start',
+                            gap: isMobile ? 2 : 0.5,
+                          }}
+                        >
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, color: 'text.secondary' }}>
+                            <EventIcon sx={{ fontSize: 18, mr: 0.5, color: 'primary.main' }} />
+                            <Typography variant="body2">{formatEventDate(event.datetime)}</Typography>
+                          </Box>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, color: 'text.secondary' }}>
+                            <LocationOnIcon sx={{ fontSize: 18, mr: 0.5, color: 'secondary.main' }} />
+                            <Typography variant="body2" sx={{ maxWidth: { xs: '100%', md: 600 }, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {event.placeName}
+                            </Typography>
+                          </Box>
                         </Box>
                       }
                     />

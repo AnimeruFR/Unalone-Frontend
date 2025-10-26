@@ -276,35 +276,14 @@ export const customStyles = `
     box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
   }
 
-  /* Media queries pour responsive */
+  /* Media queries pour responsive - la carte reste plein écran sur mobile */
   @media (max-width: 768px) {
     .sidebar {
       width: 100% !important;
-      height: 50vh !important;
-      position: absolute !important;
-      bottom: 0 !important;
-      z-index: 1000 !important;
     }
-
     .map-container {
-      height: 50vh !important;
+      height: 100% !important;
       width: 100% !important;
-    }
-
-    .floating-fab {
-      bottom: calc(50vh + 20px) !important;
-      right: 20px !important;
-      left: auto !important;
-    }
-  }
-
-  @media (max-width: 480px) {
-    .sidebar {
-      height: 60vh !important;
-    }
-
-    .map-container {
-      height: 40vh !important;
     }
   }
 

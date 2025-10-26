@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { ThemeProvider, CssBaseline, Box, Snackbar, Alert, Fab, Button, Tooltip, AppBar, Toolbar, IconButton, Drawer, useMediaQuery } from '@mui/material';
+import { ThemeProvider, CssBaseline, Box, Snackbar, Alert, Fab, Button, Tooltip, AppBar, Toolbar, IconButton, useMediaQuery, Typography, SwipeableDrawer, Menu, MenuItem } from '@mui/material';
 import MapComponent, { MapComponentHandle } from './components/MapComponent';
 import SidebarComponent from './components/SidebarComponent';
 import CreateEventModal from './components/CreateEventModal';
@@ -9,15 +9,17 @@ import { useGeolocation } from './hooks/useGeolocation';
 import { eventsApi, Event, CreateEventData, apiUtils, User, authApi } from './services/api';
 import { socketService } from './services/socket';
 import { unaloneTheme, customStyles } from './styles/theme';
-import { Add as AddIcon, AccountCircle as AccountIcon, Menu as MenuIcon, MyLocation as MyLocationIcon } from '@mui/icons-material';
+import { Add as AddIcon, AccountCircle as AccountIcon, Menu as MenuIcon, MyLocation as MyLocationIcon, Close as CloseIcon, Logout as LogoutIcon, ArrowBack as ArrowBackIcon } from '@mui/icons-material';
 import AuthModal from './components/AuthModal';
 import EventDetailsModal from './components/EventDetailsModal';
 import CookieConsent from './components/CookieConsent';
 import RGPDMenu from './components/RGPDMenu';
 
 function App() {
+  // Déclaration de tous les hooks d'abord
+  const [userMenuAnchor, setUserMenuAnchor] = React.useState<HTMLElement | null>(null);
   const [events, setEvents] = useState<Event[]>([]);
-  // Note: loading UI not used; remove to satisfy lint and simplify state
+  const currentUserId = apiUtils.generateTempUserId();
   const [error, setError] = useState<string>('');
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({
@@ -35,52 +37,18 @@ function App() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const isMobile = useMediaQuery('(max-width:768px)');
   const mapRef = React.useRef<MapComponentHandle | null>(null);
-
   // Géolocalisation
   const { position: userPosition, permission: geoPermission, requestPermission: requestGeo, error: geoError } = useGeolocation();
 
+  // Fonctions utilitaires ensuite
+  const handleBackToMap = () => setCurrentView('map');
   const handleRequestGeo = () => {
     if (geoPermission === 'denied') {
-      // Ne pas rappeler l'API, afficher des instructions claires
-      setSnackbar({
-        open: true,
-        message:
-          "Localisation refusée. Cliquez sur l'icône cadenas à côté de l'URL > Paramètres du site > Localisation > Autoriser, puis rechargez la page.",
-        severity: 'error',
-      });
+      // Permission refusée, rien à faire (message déjà géré dans le JSX)
       return;
     }
-    requestGeo();
+    if (typeof requestGeo === 'function') requestGeo();
   };
-
-  // ID utilisateur temporaire
-  const currentUserId = apiUtils.generateTempUserId();
-
-  // Vérifier l'état de connexion au démarrage
-  useEffect(() => {
-    const initializeAuth = async () => {
-      const token = apiUtils.getAuthToken();
-      if (token) {
-        try {
-          // Récupérer les informations utilisateur via l'API
-          const userInfo = await authApi.verifyToken();
-          setCurrentUser(userInfo);
-          setIsAuthenticated(true);
-          console.log('Utilisateur reconnecté automatiquement:', userInfo);
-        } catch (error) {
-          console.error('Token invalide ou expiré:', error);
-          // Token invalide, nettoyer le stockage
-          localStorage.removeItem('authToken');
-          setIsAuthenticated(false);
-          setCurrentUser(null);
-        }
-      }
-    };
-
-    initializeAuth();
-  }, []);
-
-  // Connexion Socket.io et abonnements temps réel
   useEffect(() => {
     const token = apiUtils.getAuthToken();
     if (!token) {
@@ -337,9 +305,26 @@ function App() {
     setCurrentView('account');
   };
 
-  const handleBackToMap = () => {
-    setCurrentView('map');
-  };
+  // Restaurer la session à l'actualisation si un token existe
+  useEffect(() => {
+    const token = apiUtils.getAuthToken();
+    if (!token) return; // pas de token, rien à restaurer
+
+    (async () => {
+      try {
+        const me = await authApi.verifyToken();
+        setCurrentUser(me);
+        setIsAuthenticated(true);
+      } catch (err: any) {
+        // Token invalide/expiré -> nettoyage
+        console.warn('Vérification de session échouée, nettoyage du token');
+        localStorage.removeItem('authToken');
+        setCurrentUser(null);
+        setIsAuthenticated(false);
+      }
+    })();
+  }, []);
+
 
   const handleManageEvent = (eventId: string) => {
     // Rediriger vers la page de gestion de l'événement dans le compte
@@ -355,7 +340,8 @@ function App() {
           display: 'flex',
           height: '100vh',
           background: unaloneTheme.unalone.gradients.background,
-          overflow: 'hidden'
+          overflow: 'hidden',
+          pt: isMobile ? '56px' : 0 // Ajoute un padding-top sous l'AppBar mobile (56px = hauteur MUI AppBar)
         }}
       >
         {isMobile && (
@@ -364,9 +350,36 @@ function App() {
               <IconButton edge="start" onClick={() => setDrawerOpen(true)} aria-label="open menu">
                 <MenuIcon />
               </IconButton>
-              <Button variant="outlined" size="small" onClick={() => setAuthOpen(true)}>
-                {isAuthenticated ? ((currentUser as any)?.username || currentUser?.name || 'Mon compte') : 'Se connecter'}
-              </Button>
+              {/* Compte/connexion mobile */}
+              {isAuthenticated && currentUser ? (
+                <Box>
+                  <IconButton
+                    color="primary"
+                    onClick={(e) => setUserMenuAnchor(e.currentTarget as HTMLElement)}
+                    aria-label="Mon compte"
+                  >
+                    <AccountIcon />
+                  </IconButton>
+                  <Menu
+                    anchorEl={userMenuAnchor}
+                    open={Boolean(userMenuAnchor)}
+                    onClose={() => setUserMenuAnchor(null)}
+                  >
+                    <MenuItem onClick={() => { setUserMenuAnchor(null); setCurrentView('account'); }}>
+                      <AccountIcon sx={{ mr: 1 }} />
+                      Mon compte
+                    </MenuItem>
+                    <MenuItem onClick={() => { setUserMenuAnchor(null); handleLogout(); }}>
+                      <LogoutIcon sx={{ mr: 1 }} />
+                      Déconnexion
+                    </MenuItem>
+                  </Menu>
+                </Box>
+              ) : (
+                <Button variant="outlined" size="small" onClick={() => setAuthOpen(true)}>
+                  Se connecter
+                </Button>
+              )}
             </Toolbar>
           </AppBar>
         )}
@@ -393,7 +406,7 @@ function App() {
             )}
 
             {/* Carte */}
-            <Box sx={{ flex: 1, position: 'relative', pt: isMobile ? '64px' : 0 }}>
+            <Box sx={{ flex: 1, position: 'relative', pt: 0 }}>
               <MapComponent 
                 ref={mapRef}
                 events={events} 
@@ -404,7 +417,7 @@ function App() {
               />
 
               {/* Bouton discret pour activer la géolocalisation, afin d'éviter les blocages du navigateur */}
-              {geoPermission !== 'granted' && (
+              {typeof geoPermission === 'string' && geoPermission !== 'granted' && (
                 <Box sx={{ position: 'absolute', left: 16, bottom: 16, zIndex: 1000 }}>
                   <Tooltip title={
                     geoPermission === 'denied'
@@ -418,52 +431,76 @@ function App() {
                 </Box>
               )}
 
-              {/* FAB Ma position sur mobile */}
+              {/* FAB Ma position et Créer un évènement sur mobile */}
               {isMobile && (
-                <Fab 
-                  className="floating-fab"
-                  color="primary" 
-                  aria-label="Ma position"
-                  onClick={() => {
-                    if (geoPermission !== 'granted') {
-                      handleRequestGeo();
-                    } else {
-                      mapRef.current?.recenterToUser();
-                    }
-                  }}
-                >
-                  <MyLocationIcon />
-                </Fab>
+                <>
+                  <Fab 
+                    className="floating-fab"
+                    color="primary" 
+                    aria-label="Ma position"
+                    sx={{ right: 16, bottom: 16, position: 'absolute', zIndex: 1100 }}
+                    onClick={() => {
+                      if (typeof geoPermission === 'string' && geoPermission !== 'granted') {
+                        handleRequestGeo();
+                      } else {
+                        mapRef.current?.recenterToUser();
+                      }
+                    }}
+                  >
+                    <MyLocationIcon />
+                  </Fab>
+                  <Fab
+                    color="secondary"
+                    aria-label="Créer un évènement"
+                    sx={{ left: 16, bottom: 16, position: 'absolute', zIndex: 1100 }}
+                    onClick={() => setCreateModalOpen(true)}
+                  >
+                    <AddIcon />
+                  </Fab>
+                </>
               )}
             </Box>
 
             {/* Mobile Drawer bottom sheet for events list */}
             {isMobile && (
-              <Drawer
+              <SwipeableDrawer
                 anchor="bottom"
                 open={drawerOpen}
                 onClose={() => setDrawerOpen(false)}
-                PaperProps={{ sx: { height: '60vh', borderTopLeftRadius: 16, borderTopRightRadius: 16 } as any, className: 'drawer-paper-safe' }}
+                onOpen={() => setDrawerOpen(true)}
+                disableBackdropTransition={false}
+                disableDiscovery
+                PaperProps={{ sx: { height: '100vh', borderTopLeftRadius: 16, borderTopRightRadius: 16 } as any, className: 'drawer-paper-safe' }}
               >
-                <Box sx={{ height: '100%', overflow: 'hidden' }}>
-                  <SidebarComponent
-                    events={events}
-                    onCreateEvent={() => setCreateModalOpen(true)}
-                    onJoinEvent={handleJoinEvent}
-                    onLeaveEvent={handleLeaveEvent}
-                    onZoomToEvent={handleZoomToEvent}
-                    onManageEvent={handleManageEvent}
-                    userPosition={userPosition}
-                    currentUserId={currentUserId}
-                    onOpenAuth={() => setAuthOpen(true)}
-                    isAuthenticated={isAuthenticated}
-                    currentUser={currentUser}
-                    onLogout={handleLogout}
-                    onGoToAccount={handleGoToAccount}
-                    selectedEventId={selectedEventId}
-                  />
+                <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+                  {/* Drawer header with handle and close */}
+                  <Box sx={{ p: 1.5, position: 'relative', borderBottom: '1px solid #e2e8f0' }}>
+                    <Box sx={{ width: 44, height: 4, bgcolor: '#cbd5e1', borderRadius: 2, mx: 'auto', mb: 1 }} />
+                    <Typography variant="subtitle1" sx={{ textAlign: 'center', fontWeight: 700 }}>Événements</Typography>
+                    <IconButton onClick={() => setDrawerOpen(false)} sx={{ position: 'absolute', right: 8, top: 6 }} aria-label="Fermer">
+                      <CloseIcon />
+                    </IconButton>
+                  </Box>
+                  <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
+                    <SidebarComponent
+                      events={events}
+                      onCreateEvent={() => setCreateModalOpen(true)}
+                      onJoinEvent={handleJoinEvent}
+                      onLeaveEvent={handleLeaveEvent}
+                      onZoomToEvent={handleZoomToEvent}
+                      onManageEvent={handleManageEvent}
+                      userPosition={userPosition}
+                      currentUserId={currentUserId}
+                      onOpenAuth={() => setAuthOpen(true)}
+                      isAuthenticated={isAuthenticated}
+                      currentUser={currentUser}
+                      onLogout={handleLogout}
+                      onGoToAccount={handleGoToAccount}
+                      selectedEventId={selectedEventId}
+                    />
+                  </Box>
                 </Box>
-              </Drawer>
+              </SwipeableDrawer>
             )}
           </>
         ) : (
